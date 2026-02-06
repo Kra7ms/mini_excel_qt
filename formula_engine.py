@@ -1,396 +1,106 @@
-import re
 from PySide6.QtCore import Qt
-from utils import cell_to_index
+from utils import index_to_cell
+from parser import Parser
+from ast_nodes import *
+from dependency_graph import DependencyGraph
+from dependency import DependencyExtractor
+from evaluator import Evaluator
 
 RANGE_FUNCTIONS = ("SUM", "AVERAGE", "MIN", "MAX", "COUNT")
 LOGIC_FUNCTIONS = ("AND", "OR", "XOR")
 
-
 class FormulaEngine:
     def __init__(self, table):
         self.table = table
-        self.dependencies = {}
-        self._updating = False
+        self.parser = Parser()
+        self.evaluator = Evaluator(table)
+        self.extractor = DependencyExtractor()
+        self.graph = DependencyGraph()
 
     # =====================================================
-    # ANA GİRİŞ
+    # ENTRY POINT
     # =====================================================
     def process_item(self, item):
-        if self._updating:
-            return
-
         text = item.text().strip()
         row, col = item.row(), item.column()
+        cell_ref = index_to_cell(row, col)
+
 
         if not text.startswith("="):
             item.setData(Qt.UserRole, None)
+            self.graph.remove_cell(cell_ref)
+            self._recalculate_dependents(cell_ref)
             return
 
-        self._updating = True
-        item.setData(Qt.UserRole, text)
-
-        value = self.evaluate(text)
-        item.setText(value)
-
-        self._register_dependencies(row, col, text)
-        self._updating = False
-
-    # =====================================================
-    # FORMÜL DEĞERLENDİRME
-    # =====================================================
-    def evaluate(self, formula: str) -> str:
-        expr = formula[1:].strip()
-
-        # TRUE / FALSE sabitleri
-        expr = re.sub(r"\bTRUE\(\)", "True", expr, flags=re.IGNORECASE)
-        expr = re.sub(r"\bFALSE\(\)", "False", expr, flags=re.IGNORECASE)        
-
-        expr = self._handle_if(expr)
-        expr = self._handle_switch(expr)
-        expr = self._handle_reduce(expr)
-        expr = self._handle_scan(expr)
-        expr = self._handle_map(expr)
-        expr = self._handle_not(expr)
-        expr = self._handle_logic(expr)
-        expr = self._handle_range_functions(expr)
-        expr = self._replace_cells(expr)
+        # ---------------------------
+        # FORMÜL
+        # ---------------------------
+        formula = text[1:]
+        item.setData(Qt.UserRole, formula)
 
         try:
-            result = eval(expr, {"__builtins__": None}, {})
-            return "TRUE" if result is True else "FALSE" if result is False else str(result)
-        except:
-            return "#ERROR"
-        
-    # =====================================================
-    # IF FONKSİYONU
-    # =====================================================
-    def _handle_if(self, expr: str):
-        if not expr.upper().startswith("IF("):
-            return expr
-
-        inside = expr[3:-1]
-        args = self._split_args(inside)
-
-        if len(args) != 3:
-            return "#ERROR"
-
-        condition, true_part, false_part = args
-
-        try:
-            cond = self.evaluate("=" + condition)
-            result = cond in ("TRUE", "True", 1)
+            ast = self.parser.parse(formula)
         except Exception:
-            result = False
+            self._set_item_value(item, "#PARSE!")
+            return
 
-        chosen = true_part if result else false_part
-        return self.evaluate("=" + chosen.strip())
-    
-    # ====================================================
-    # SWITCH FONKSİYONU
-    # ====================================================
-    def _handle_switch(self, expr: str):
-        if not expr.upper().startswith("SWITCH("):
-            return expr
+        # Dependency çıkar
+        deps = self.extractor.extract(ast)
+        self.graph.set_dependencies((row, col), deps)
 
-        inside = expr[7:-1]  # SWITCH(...)
-        args = self._split_if_args(inside)
-
-        if len(args) < 3:
-            return "#ERROR"
-
-        # İlk ifade
+        # Evaluate
         try:
-            base_value = self.evaluate("=" + args[0])
-            base_value = eval(base_value)
-        except:
-            return "#ERROR"
+            value = self.evaluator.eval(ast)
+        except Exception:
+            value = "#ERROR"
 
-        pairs = args[1:]
+        # UI güncelle
+        self._set_item_value(item, value)
 
-        default = None
-        if len(pairs) % 2 == 1:
-            default = pairs[-1]
-            pairs = pairs[:-1]
-
-        for i in range(0, len(pairs), 2):
-            try:
-                match_val = eval(self.evaluate("=" + pairs[i]))
-                if base_value == match_val:
-                    return self.evaluate("=" + pairs[i + 1])
-            except:
-                continue
-
-        if default is not None:
-            return self.evaluate("=" + default)
-
-        return ""
+        # Bağımlıları güncelle
+        self._recalculate_dependents(cell_ref)
     
-    # ====================================================
-    # REDUCE FONKSİYONU
-    # ====================================================
-    def _handle_reduce(self, expr: str):
-        pattern = re.compile(r"REDUCE\(\s*([^,]+)\s*,\s*([A-Z]+[0-9]+:[A-Z]+[0-9]+)\s*,\s*([^)]+)\s*\)", re.IGNORECASE)
-
-        while True:
-            match = pattern.search(expr)
-            if not match:
-                break
-
-            initial, range_ref, lambda_expr = match.groups()
-            start, end = range_ref.split(":")
-            values = self._get_range_values(start, end)
-
-            try:
-                acc = eval(self._replace_cells(initial), {"__builtins__": None}, {})
-            except:
-                acc = 0
-
-            for v in values:
-                safe_expr = lambda_expr.replace("a", f"({acc})").replace("b", f"({v})")
-                try:
-                    acc = eval(safe_expr, {"__builtins__": None}, {"MAX": max, "MIN": min, "ABS": abs})
-                except:
-                    acc = 0
-
-            expr = expr[:match.start()] + str(acc) + expr[match.end():]
-
-        return expr
-    
-    # ====================================================
-    # SCAN FONKSİYONU
-    # ====================================================
-    def _handle_scan(self, expr: str):
-        pattern = r"SCAN\((.+?),(.+?),(.+?)\)"
-        match = re.search(pattern, expr, re.IGNORECASE)
-
-        if not match:
-            return expr
-
-        init_expr, range_expr, lambda_expr = match.groups()
-
-        # Initial value
-        try:
-            acc = float(self.evaluate("=" + init_expr))
-        except:
-            return "#ERROR"
-
-        # Range
-        if ":" not in range_expr:
-            return "#ERROR"
-
-        start, end = range_expr.split(":")
-        values = self._get_range_values(start.strip(), end.strip())
-
-        results = []
-
-        for v in values:
-            try:
-                expr_eval = lambda_expr.replace("a", str(acc)).replace("b", str(v))
-                acc = eval(expr_eval, {"__builtins__": None}, {"MAX": max, "MIN": min, "ABS": abs})
-                results.append(acc)
-            except:
-                return "#ERROR"
-
-        # Tek hücreye yazmak için
-        return ",".join(str(r) for r in results)
-    
-    # ====================================================
-    # SCAN FONKSİYONU
-    # ====================================================
-    def _handle_map(self, expr: str):
-        pattern = re.compile(
-            r"MAP\(\s*([A-Z]+[0-9]+:[A-Z]+[0-9]+)\s*,\s*([^)]+)\)", re.IGNORECASE)
-
-        while True:
-            match = pattern.search(expr)
-            if not match:
-                break
-
-            range_ref, lambda_expr = match.groups()
-            start, end = range_ref.split(":")
-
-            values = self._get_range_values(start.strip(), end.strip())
-            results = []
-
-            for v in values:
-                try:
-                    safe_expr = lambda_expr.replace("b", f"({v})")
-                    res = eval(
-                        safe_expr,
-                        {"__builtins__": None},
-                        {"ABS": abs, "MAX": max, "MIN": min}
-                    )
-                    results.append(res)
-                except:
-                    results.append(0)
-
-            # Şimdilik tek hücre çıktısı
-            replacement = ",".join(str(r) for r in results)
-            expr = expr[:match.start()] + replacement + expr[match.end():]
-
-        return expr
-
-
-    # ====================================================
-    # NOT FONKSİYONU
-    # ====================================================
-    def _handle_not(self, expr: str):
-        pattern = r"NOT\((.*?)\)"
-
-        def repl(match):
-            inner = match.group(1)
-            try:
-                val = self.evaluate("=" + inner)
-                result = not bool(eval(val))
-                return "True" if result else "False"
-            except:
-                return "False"
-
-        return re.sub(pattern, repl, expr, flags=re.IGNORECASE)
-
     # =====================================================
-    # AND / OR / XOR
+    # DIŞTAN YENİDEN HESAPLAMA
     # =====================================================
-    def _handle_logic(self, expr: str):
-        for func in LOGIC_FUNCTIONS:
-            pattern = rf"{func}\((.*?)\)"
-            expr = re.sub(
-                pattern,
-                lambda m: self._eval_logic(m.group(1), func),
-                expr,
-                flags=re.IGNORECASE
-            )
-        return expr
+    def _recalculate_dependents(self, cell_ref):
+        for dep in self.graph.recalculate_dependents(cell_ref):
+            r, c = self._cell_to_index(dep)
+            self._recalculate_cell(r, c)
 
-    def _eval_logic(self, content: str, mode: str):
-        parts = self._split_args(content)
-        results = []
-
-        for part in parts:
-            try:
-                val = self.evaluate("=" + part)
-                results.append(bool(eval(val)))
-            except:
-                results.append(False)
-
-        if mode == "AND":
-            return str(all(results))
-        if mode == "OR":
-            return str(any(results))
-        if mode == "XOR":
-            return str(sum(results) == 1)
-
-        return "False"
-
-    # =====================================================
-    # RANGE FONKSİYONLARI
-    # =====================================================
-    def _handle_range_functions(self, expr: str):
-        for func in RANGE_FUNCTIONS:
-            pattern = rf"{func}\(([A-Z]+[0-9]+):([A-Z]+[0-9]+)\)"
-            for start, end in re.findall(pattern, expr):
-                values = self._get_range_values(start, end)
-
-                if func == "SUM":
-                    result = sum(values)
-                elif func == "AVERAGE":
-                    result = sum(values) / len(values) if values else 0
-                elif func == "MIN":
-                    result = min(values) if values else 0
-                elif func == "MAX":
-                    result = max(values) if values else 0
-                elif func == "COUNT":
-                    result = len(values)
-
-                expr = expr.replace(f"{func}({start}:{end})", str(result))
-
-        return expr
-
-    # =====================================================
-    # HÜCRE DEĞİŞTİRME
-    # =====================================================
-    def _replace_cells(self, expr: str):
-        expr = expr.replace("<>", "!=")
-        expr = re.sub(r"(?<![<>=!])=(?!=)", "==", expr)
-
-        refs = set(re.findall(r"[A-Z]+[0-9]+", expr))
-        for ref in refs:
-            expr = expr.replace(ref, self._get_cell_value(ref))
-
-        return expr
-
-    def _get_cell_value(self, ref: str):
-        idx = cell_to_index(ref)
-        if not idx:
-            return "0"
-
-        row, col = idx
+    def _recalculate_cell(self, row: int, col: int):
         item = self.table.item(row, col)
+        if not item:
+            return
 
-        if not item or not item.text().strip():
-            return "0"
+        formula = item.data(Qt.UserRole)
+        if not formula:
+            return
 
-        text = item.text().strip()
         try:
-            float(text)
-            return text
-        except:
-            return f'"{text}"'
+            ast = self.parser.parse(formula)
+            value = self.evaluator.eval(ast)
+        except Exception:
+            value = "#ERROR"
+
+        self._set_item_value(item, value)
 
     # =====================================================
-    # RANGE DEĞERLERİ
+    # UI SAFE UPDATE
     # =====================================================
-    def _get_range_values(self, start, end):
-        s, e = cell_to_index(start), cell_to_index(end)
-        if not s or not e:
-            return []
+    def _set_item_value(self, item, value):
+        table = self.table
+        table.blockSignals(True)
 
-        r1, c1 = s
-        r2, c2 = e
+        if value is True:
+            item.setText("TRUE")
+        elif value is False:
+            item.setText("FALSE")
+        else:
+            item.setText(str(value))
 
-        values = []
-        for r in range(min(r1, r2), max(r1, r2) + 1):
-            for c in range(min(c1, c2), max(c1, c2) + 1):
-                item = self.table.item(r, c)
-                if not item:
-                    continue
-                try:
-                    values.append(float(item.text()))
-                except:
-                    pass
-        return values
+        table.blockSignals(False)
 
-    # =====================================================
-    # ARG SPLITTER (IF / AND / OR / XOR için)
-    # =====================================================
-    def _split_args(self, text):
-        args, depth, current = [], 0, ""
-        for ch in text:
-            if ch == "," and depth == 0:
-                args.append(current.strip())
-                current = ""
-            else:
-                if ch == "(":
-                    depth += 1
-                elif ch == ")":
-                    depth -= 1
-                current += ch
-        args.append(current.strip())
-        return args
-
-    # =====================================================
-    # BAĞIMLILIK
-    # =====================================================
-    def _register_dependencies(self, row, col, formula):
-        refs = set(re.findall(r"[A-Z]+[0-9]+", formula))
-        self.dependencies[(row, col)] = {
-            cell_to_index(r) for r in refs if cell_to_index(r)
-        }
-
-    def recalculate_all(self):
-        for (r, c) in self.dependencies:
-            item = self.table.item(r, c)
-            if item:
-                formula = item.data(Qt.UserRole)
-                if formula:
-                    item.setText(self.evaluate(formula))
+    def _cell_to_index(self, ref):
+        from utils import cell_to_index
+        return cell_to_index(ref)
