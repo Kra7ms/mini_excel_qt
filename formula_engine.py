@@ -2,7 +2,7 @@ import re
 from PySide6.QtCore import Qt
 from utils import cell_to_index
 
-RANGE_FUNCTIONS = ("SUM", "AVERAGE", "MIN", "MAX", "COUNT", "SCAN")
+RANGE_FUNCTIONS = ("SUM", "AVERAGE", "MIN", "MAX", "COUNT")
 LOGIC_FUNCTIONS = ("AND", "OR", "XOR")
 
 
@@ -47,7 +47,10 @@ class FormulaEngine:
 
         expr = self._handle_if(expr)
         expr = self._handle_switch(expr)
+        expr = self._handle_reduce(expr)
         expr = self._handle_scan(expr)
+        expr = self._handle_map(expr)
+        expr = self._handle_not(expr)
         expr = self._handle_logic(expr)
         expr = self._handle_range_functions(expr)
         expr = self._replace_cells(expr)
@@ -75,7 +78,7 @@ class FormulaEngine:
 
         try:
             cond = self.evaluate("=" + condition)
-            result = bool(eval(cond))
+            result = cond in ("TRUE", "True", 1)
         except Exception:
             result = False
 
@@ -123,9 +126,39 @@ class FormulaEngine:
         return ""
     
     # ====================================================
+    # REDUCE FONKSİYONU
+    # ====================================================
+    def _handle_reduce(self, expr: str):
+        pattern = re.compile(r"REDUCE\(\s*([^,]+)\s*,\s*([A-Z]+[0-9]+:[A-Z]+[0-9]+)\s*,\s*([^)]+)\s*\)", re.IGNORECASE)
+
+        while True:
+            match = pattern.search(expr)
+            if not match:
+                break
+
+            initial, range_ref, lambda_expr = match.groups()
+            start, end = range_ref.split(":")
+            values = self._get_range_values(start, end)
+
+            try:
+                acc = eval(self._replace_cells(initial), {"__builtins__": None}, {})
+            except:
+                acc = 0
+
+            for v in values:
+                safe_expr = lambda_expr.replace("a", f"({acc})").replace("b", f"({v})")
+                try:
+                    acc = eval(safe_expr, {"__builtins__": None}, {"MAX": max, "MIN": min, "ABS": abs})
+                except:
+                    acc = 0
+
+            expr = expr[:match.start()] + str(acc) + expr[match.end():]
+
+        return expr
+    
+    # ====================================================
     # SCAN FONKSİYONU
     # ====================================================
-
     def _handle_scan(self, expr: str):
         pattern = r"SCAN\((.+?),(.+?),(.+?)\)"
         match = re.search(pattern, expr, re.IGNORECASE)
@@ -153,13 +186,67 @@ class FormulaEngine:
         for v in values:
             try:
                 expr_eval = lambda_expr.replace("a", str(acc)).replace("b", str(v))
-                acc = eval(expr_eval, {"__builtins__": None}, {})
+                acc = eval(expr_eval, {"__builtins__": None}, {"MAX": max, "MIN": min, "ABS": abs})
                 results.append(acc)
             except:
                 return "#ERROR"
 
         # Tek hücreye yazmak için
         return ",".join(str(r) for r in results)
+    
+    # ====================================================
+    # SCAN FONKSİYONU
+    # ====================================================
+    def _handle_map(self, expr: str):
+        pattern = re.compile(
+            r"MAP\(\s*([A-Z]+[0-9]+:[A-Z]+[0-9]+)\s*,\s*([^)]+)\)", re.IGNORECASE)
+
+        while True:
+            match = pattern.search(expr)
+            if not match:
+                break
+
+            range_ref, lambda_expr = match.groups()
+            start, end = range_ref.split(":")
+
+            values = self._get_range_values(start.strip(), end.strip())
+            results = []
+
+            for v in values:
+                try:
+                    safe_expr = lambda_expr.replace("b", f"({v})")
+                    res = eval(
+                        safe_expr,
+                        {"__builtins__": None},
+                        {"ABS": abs, "MAX": max, "MIN": min}
+                    )
+                    results.append(res)
+                except:
+                    results.append(0)
+
+            # Şimdilik tek hücre çıktısı
+            replacement = ",".join(str(r) for r in results)
+            expr = expr[:match.start()] + replacement + expr[match.end():]
+
+        return expr
+
+
+    # ====================================================
+    # NOT FONKSİYONU
+    # ====================================================
+    def _handle_not(self, expr: str):
+        pattern = r"NOT\((.*?)\)"
+
+        def repl(match):
+            inner = match.group(1)
+            try:
+                val = self.evaluate("=" + inner)
+                result = not bool(eval(val))
+                return "True" if result else "False"
+            except:
+                return "False"
+
+        return re.sub(pattern, repl, expr, flags=re.IGNORECASE)
 
     # =====================================================
     # AND / OR / XOR
