@@ -14,11 +14,11 @@ from PySide6.QtWidgets import (
     QListWidget,
     QPushButton,
     QFontComboBox,
-    QComboBox
+    QComboBox,
+    QColorDialog
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QGuiApplication
-
+from PySide6.QtGui import QGuiApplication, QColor, QBrush
 from formula_engine import FormulaEngine
 from utils import index_to_cell
 
@@ -79,6 +79,21 @@ class MiniExcelUI(QMainWindow):
         self.format_button.setCheckable(True)
         self.format_button.setFixedWidth(32)
         bar.addWidget(self.format_button)
+
+        self.border_button = QToolButton()
+        self.border_button.setText("▦")
+        self.border_button.setPopupMode(QToolButton.InstantPopup)
+        self.border_button.setFixedWidth(32)
+        bar.addWidget(self.border_button)
+        self._setup_border_menu()
+
+        self.fill_button = QPushButton("🪣")
+        self.fill_button.setFixedWidth(32)
+        bar.addWidget(self.fill_button)
+
+        self.text_color_button = QPushButton("🅰️")
+        self.text_color_button.setFixedWidth(32)
+        bar.addWidget(self.text_color_button)
 
         self.font_box = QFontComboBox()
         self.font_box.setMaximumWidth(160)
@@ -141,6 +156,8 @@ class MiniExcelUI(QMainWindow):
         self.font_box.currentFontChanged.connect(self._change_font)
         self.font_size_box.currentTextChanged.connect(self._change_font_size)
         self.bold_button.clicked.connect(self._toggle_bold)
+        self.fill_button.clicked.connect(self._choose_fill_color)
+        self.text_color_button.clicked.connect(self._choose_text_color)
 
     # ==================================================
     # SETUP
@@ -239,22 +256,35 @@ class MiniExcelUI(QMainWindow):
     def _push_undo_state(self, item):
         if self._undo_block:
             return
+
         self.undo_stack.append(
-            (item.row(), item.column(), item.text(), item.data(Qt.UserRole))
+            (
+                item.row(),
+                item.column(),
+                item.text(),
+                item.data(Qt.UserRole),
+                item.background(),
+                item.foreground()
+            )
         )
+
 
     def _undo(self):
         if not self.undo_stack:
             return
-        row, col, text, formula = self.undo_stack.pop()
+        row, col, text, formula, border, bg, fg = self.undo_stack.pop()
         item = self.table.item(row, col)
         if not item:
             return
         self._undo_block = True
         item.setText(text or "")
+        item.setData(Qt.UserRole + 1, border)
         item.setData(Qt.UserRole, formula)
+        item.setBackground(bg)
+        item.setForeground(fg)
         self._undo_block = False
         self.engine.process_item(item)
+        
 
     def _on_item_changed(self, item):
         if self._undo_block:
@@ -376,6 +406,73 @@ class MiniExcelUI(QMainWindow):
 
         font.setBold(not is_bold)
         item.setFont(font)
+
+    def _setup_border_menu(self):
+        menu = QMenu(self)
+
+        menu.addAction("No Border", lambda: self._set_border(None))
+        menu.addAction("All Borders", lambda: self._set_border("all"))
+
+        self.border_button.setMenu(menu)
+
+    def _set_border(self, mode):
+        item = self.table.currentItem()
+        if not item:
+            return
+
+        self._push_undo_state(item)
+
+        if mode is None:
+            item.setData(Qt.UserRole + 1, None)
+        else:
+            item.setData(Qt.UserRole + 1, mode)
+
+        self._apply_table_borders()
+
+    def _choose_fill_color(self):
+        item = self.table.currentItem()
+        if not item:
+            return
+
+        color = QColorDialog.getColor(parent=self, title="Fill Color")
+        if not color.isValid():
+            return
+
+        # Undo için eski state
+        self._push_undo_state(item)
+
+        item.setBackground(color)
+    
+    def _choose_text_color(self):
+        item = self.table.currentItem()
+        if not item:
+            return
+
+        color = QColorDialog.getColor(parent=self, title="Text Color")
+        if not color.isValid():
+            return
+
+        self._push_undo_state(item)
+
+        item.setForeground(QBrush(color))
+
+    def _apply_table_borders(self):
+        css = []
+
+        for r in range(self.table.rowCount()):
+            for c in range(self.table.columnCount()):
+                item = self.table.item(r, c)
+                if not item:
+                    continue
+
+                border = item.data(Qt.UserRole + 1)
+                if border == "all":
+                    css.append(
+                        f"QTableWidget::item(row:{r}, column:{c})"
+                        "{ border: 1px solid black; }"
+                    )
+
+        self.table.setStyleSheet("\n".join(css))
 
     # ==================================================
     # INSERT FUNCTION
