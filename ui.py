@@ -88,6 +88,13 @@ class MiniExcelUI(QMainWindow):
         self.font_size_box.setEditable(True)
         self.font_size_box.setMaximumWidth(60)
 
+        self.bold_button = QToolButton()
+        self.bold_button.setText("B")
+        self.bold_button.setCheckable(True)
+        self.bold_button.setFixedWidth(28)
+        self.bold_button.setStyleSheet("font-weight: bold;")
+        bar.addWidget(self.bold_button)
+
         sizes = [
             "8", "9", "10", "11", "12", "14", "16",
             "18", "20", "22", "24", "26", "28", "36", "48", "72"
@@ -133,6 +140,7 @@ class MiniExcelUI(QMainWindow):
         self.format_button.clicked.connect(self._toggle_format_painter)
         self.font_box.currentFontChanged.connect(self._change_font)
         self.font_size_box.currentTextChanged.connect(self._change_font_size)
+        self.bold_button.clicked.connect(self._toggle_bold)
 
     # ==================================================
     # SETUP
@@ -339,6 +347,10 @@ class MiniExcelUI(QMainWindow):
         self.font_size_box.setCurrentText(str(font.pointSize()))
         self.font_size_box.blockSignals(False)
 
+        self.bold_button.blockSignals(True)
+        self.bold_button.setChecked(font.bold())
+        self.bold_button.blockSignals(False)
+
     def _apply_formula_from_bar(self):
         item = self.table.currentItem()
         if not item:
@@ -348,6 +360,22 @@ class MiniExcelUI(QMainWindow):
         item.setText(text)
         self.table.blockSignals(False)
         self.engine.process_item(item)
+
+    # ==================================================
+    # BUTONLAR
+    # ==================================================
+    def _toggle_bold(self):
+        item = self.table.currentItem()
+        if not item:
+            return
+
+        self._push_undo_state(item)
+
+        font = item.font()
+        is_bold = font.bold()
+
+        font.setBold(not is_bold)
+        item.setFont(font)
 
     # ==================================================
     # INSERT FUNCTION
