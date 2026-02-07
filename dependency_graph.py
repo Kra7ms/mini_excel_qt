@@ -41,6 +41,9 @@ class DependencyGraph:
             self.dependencies[cell].add(dep)
             self.dependents[dep].add(cell)
 
+            self.forward[dep].add(cell)
+            self.reverse[cell].add(dep)
+
     def remove_cell(self, cell: str):
         """
         Hücreyi grafikten tamamen çıkar
@@ -56,7 +59,7 @@ class DependencyGraph:
     # =====================================================
     # RE-CALCULATE
     # =====================================================
-    def recalculate_dependents(self, start_cell, engine):
+    def recalculate_dependents(self, start_cell):
         """
         start_cell değişti → etkilenen tüm hücreleri yeniden hesapla
         """
@@ -66,13 +69,11 @@ class DependencyGraph:
         while queue:
             current = queue.popleft()
 
-            for dependent in self.forward[current]:
+            for dependent in self.forward.get[current]:
                 if dependent in visited:
                     continue
 
                 visited.add(dependent)
-
-                r, c = dependent
                 yield dependent
 
                 queue.append(dependent)
