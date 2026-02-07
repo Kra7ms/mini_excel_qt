@@ -73,7 +73,7 @@ class DependencyGraph:
                 visited.add(dependent)
 
                 r, c = dependent
-                engine.recalculate_cell(r, c)
+                yield dependent
 
                 queue.append(dependent)
 
