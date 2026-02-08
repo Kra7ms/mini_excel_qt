@@ -87,25 +87,34 @@ class MiniExcelUI(QMainWindow):
         self.tabs.addTab(self.draw_tab, "Draw")
 
         # ===============================
+        # FORMULA BAR (GLOBAL)
+        # ===============================
+        formula_layout = QHBoxLayout()
+        formula_layout.setContentsMargins(6, 4, 6, 4)
+        formula_layout.setSpacing(6)
+
+        self.cell_label = QLabel("A1")
+        self.cell_label.setFixedWidth(40)
+        self.cell_label.setAlignment(Qt.AlignCenter)
+        formula_layout.addWidget(self.cell_label)
+
+        self.formula_bar = QLineEdit()
+        self.formula_bar.setPlaceholderText("Formula")
+        formula_layout.addWidget(self.formula_bar)
+
+        self.fx_button = QToolButton()
+        self.fx_button.setText("fx")
+        self.fx_button.setPopupMode(QToolButton.InstantPopup)
+        formula_layout.addWidget(self.fx_button)
+
+        main_layout.addLayout(formula_layout)
+
+        # ===============================
         # HOME TAB
         # ===============================
         home_layout = QHBoxLayout(self.home_tab)
         home_layout.setContentsMargins(6, 4, 6, 4)
         home_layout.setSpacing(6)
-
-        self.cell_label = QLabel("A1")
-        self.cell_label.setFixedWidth(40)
-        self.cell_label.setAlignment(Qt.AlignCenter)
-        home_layout.addWidget(self.cell_label)
-
-        self.formula_bar = QLineEdit()
-        self.formula_bar.setPlaceholderText("Formula")
-        home_layout.addWidget(self.formula_bar)
-
-        self.fx_button = QToolButton()
-        self.fx_button.setText("fx")
-        self.fx_button.setPopupMode(QToolButton.InstantPopup)
-        home_layout.addWidget(self.fx_button)
 
         self.undo_button = QPushButton("⟲")
         self.undo_button.setFixedWidth(32)
@@ -250,6 +259,10 @@ class MiniExcelUI(QMainWindow):
         self.insert_pivot_btn = QPushButton("Pivot Table")
         insert_layout.addWidget(self.insert_pivot_btn)
         self.insert_pivot_btn.clicked.connect(self._insert_pivot_table)
+
+        self.insert_table_btn = QPushButton("Table")
+        insert_layout.addWidget(self.insert_table_btn)
+        self.insert_table_btn.clicked.connect(self._insert_table)
 
         self.insert_chart_btn = QPushButton("Chart")
         self.insert_chart_btn.setEnabled(False)
@@ -893,13 +906,13 @@ class MiniExcelUI(QMainWindow):
 
         r = ranges[0]
 
-        if not headers:
-            return
-
         headers = []
         for c in range(r.leftColumn(), r.rightColumn() + 1):
             item = self.table.item(r.topRow(), c)
             headers.append(item.text() if item else "")
+
+        if not any(headers):
+            return
 
         dlg = PivotDialog(headers)
         if dlg.exec() != QDialog.Accepted:
@@ -912,6 +925,49 @@ class MiniExcelUI(QMainWindow):
             dlg.func_box.currentText()
         )
 
+    def _insert_table(self):
+        ranges = self.table.selectedRanges()
+        if not ranges:
+            return
+
+        r = ranges[0]
+
+        top = r.topRow()
+        bottom = r.bottomRow()
+        left = r.leftColumn()
+        right = r.rightColumn()
+
+        # Header (ilk satır)
+        for c in range(left, right + 1):
+            item = self.table.item(top, c)
+            if not item:
+                item = QTableWidgetItem("")
+                self.table.setItem(top, c, item)
+
+            self._push_undo_state(item)
+
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+
+            item.setBackground(QBrush(QColor("#E8F0FE")))
+
+        # Body
+        for row in range(top + 1, bottom + 1):
+            for col in range(left, right + 1):
+                item = self.table.item(row, col)
+                if not item:
+                    item = QTableWidgetItem("")
+                    self.table.setItem(row, col, item)
+
+                self._push_undo_state(item)
+                item.setBackground(QBrush(QColor("#F8FBFF")))
+
+        # Filter otomatik aç
+        self.filter_button.setChecked(True)
+        self._toggle_filter()
+
+    
     # ==================================================
     # INSERT FUNCTION
     # ==================================================
