@@ -69,7 +69,7 @@ class DependencyGraph:
         while queue:
             current = queue.popleft()
 
-            for dependent in self.forward.get[current]:
+            for dependent in self.forward.get(current, []):
                 if dependent in visited:
                     continue
 
