@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QFontComboBox,
     QComboBox,
-    QColorDialog
+    QColorDialog,
+    QTabWidget
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication, QColor, QBrush
@@ -54,51 +55,82 @@ class MiniExcelUI(QMainWindow):
         # ===============================
         # TOP BAR
         # ===============================
-        bar = QHBoxLayout()
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.setMovable(False)
+        self.tabs.setTabPosition(QTabWidget.North)
+
+        self.home_tab = QWidget()
+        self.insert_tab = QWidget()
+        self.share_tab = QWidget()
+        self.page_layout_tab = QWidget()
+        self.formulas_tab = QWidget()
+        self.data_tab = QWidget()
+        self.review_tab = QWidget()
+        self.view_tab = QWidget()
+        self.help_tab = QWidget()
+        self.draw_tab = QWidget()
+
+        self.tabs.addTab(self.home_tab, "Home")
+        self.tabs.addTab(self.insert_tab, "Insert")
+        self.tabs.addTab(self.share_tab, "Share")
+        self.tabs.addTab(self.page_layout_tab, "Page Layout")
+        self.tabs.addTab(self.formulas_tab, "Formulas")
+        self.tabs.addTab(self.data_tab, "Data")
+        self.tabs.addTab(self.review_tab, "Review")
+        self.tabs.addTab(self.view_tab, "View")
+        self.tabs.addTab(self.help_tab, "Help")
+        self.tabs.addTab(self.draw_tab, "Draw")
+
+        home_layout = QHBoxLayout(self.home_tab)
+        home_layout.setContentsMargins(4, 4, 4, 4)
+        home_layout.setSpacing(4)
+
+        main_layout.addWidget(self.tabs)
 
         self.cell_label = QLabel("A1")
         self.cell_label.setFixedWidth(40)
         self.cell_label.setAlignment(Qt.AlignCenter)
-        bar.addWidget(self.cell_label)
+        home_layout.addWidget(self.cell_label)
 
         self.fx_button = QToolButton()
         self.fx_button.setText("fx")
         self.fx_button.setPopupMode(QToolButton.InstantPopup)
-        bar.addWidget(self.fx_button)
+        home_layout.addWidget(self.fx_button)
 
         self.undo_button = QPushButton("⟲")
         self.undo_button.setFixedWidth(32)
-        bar.addWidget(self.undo_button)
+        home_layout.addWidget(self.undo_button)
 
         self.clipboard_button = QToolButton()
         self.clipboard_button.setText("📋")
         self.clipboard_button.setPopupMode(QToolButton.InstantPopup)
         self.clipboard_button.setFixedWidth(32)
-        bar.addWidget(self.clipboard_button)
+        home_layout.addWidget(self.clipboard_button)
 
         self.format_button = QPushButton("🖌️")
         self.format_button.setCheckable(True)
         self.format_button.setFixedWidth(32)
-        bar.addWidget(self.format_button)
+        home_layout.addWidget(self.format_button)
 
         self.border_button = QToolButton()
         self.border_button.setText("▦")
         self.border_button.setPopupMode(QToolButton.InstantPopup)
         self.border_button.setFixedWidth(32)
-        bar.addWidget(self.border_button)
+        home_layout.addWidget(self.border_button)
         self._setup_border_menu()
 
         self.fill_button = QPushButton("🪣")
         self.fill_button.setFixedWidth(32)
-        bar.addWidget(self.fill_button)
+        home_layout.addWidget(self.fill_button)
 
         self.text_color_button = QPushButton("🅰️")
         self.text_color_button.setFixedWidth(32)
-        bar.addWidget(self.text_color_button)
+        home_layout.addWidget(self.text_color_button)
 
         self.font_box = QFontComboBox()
         self.font_box.setMaximumWidth(160)
-        bar.addWidget(self.font_box)
+        home_layout.addWidget(self.font_box)
 
         self.font_size_box = QComboBox()
         self.font_size_box.setEditable(True)
@@ -109,36 +141,36 @@ class MiniExcelUI(QMainWindow):
         self.bold_button.setCheckable(True)
         self.bold_button.setFixedWidth(28)
         self.bold_button.setStyleSheet("font-weight: bold;")
-        bar.addWidget(self.bold_button)
+        home_layout.addWidget(self.bold_button)
 
         self.align_left_btn = QToolButton()
         self.align_left_btn.setText("⟸")
         self.align_left_btn.setCheckable(True)
         self.align_left_btn.setFixedWidth(28)
-        bar.addWidget(self.align_left_btn)
+        home_layout.addWidget(self.align_left_btn)
 
         self.align_center_btn = QToolButton()
         self.align_center_btn.setText("⟺")
         self.align_center_btn.setCheckable(True)
         self.align_center_btn.setFixedWidth(28)
-        bar.addWidget(self.align_center_btn)
+        home_layout.addWidget(self.align_center_btn)
 
         self.align_right_btn = QToolButton()
         self.align_right_btn.setText("⟹")
         self.align_right_btn.setCheckable(True)
         self.align_right_btn.setFixedWidth(28)
-        bar.addWidget(self.align_right_btn)
+        home_layout.addWidget(self.align_right_btn)
 
         self.wrap_button = QToolButton()
         self.wrap_button.setText("↩︎")
         self.wrap_button.setCheckable(True)
         self.wrap_button.setFixedWidth(28)
-        bar.addWidget(self.wrap_button)
+        home_layout.addWidget(self.wrap_button)
 
         self.merge_button = QToolButton()
         self.merge_button.setText("Merge")
         self.merge_button.setFixedWidth(48)
-        bar.addWidget(self.merge_button)
+        home_layout.addWidget(self.merge_button)
 
         self.number_format_box = QComboBox()
         self.number_format_box.setMaximumWidth(140)
@@ -149,46 +181,46 @@ class MiniExcelUI(QMainWindow):
             "Percent",
             "Currency (₺)",
         ])
-        bar.addWidget(self.number_format_box)
+        home_layout.addWidget(self.number_format_box)
 
         # Accounting button
         self.accounting_button = QToolButton()
         self.accounting_button.setText("₺≡")
         self.accounting_button.setFixedWidth(36)
-        bar.addWidget(self.accounting_button)
+        home_layout.addWidget(self.accounting_button)
 
         # Decrease Decimal
         self.dec_dec_button = QToolButton()
         self.dec_dec_button.setText("-.0")
         self.dec_dec_button.setFixedWidth(36)
-        bar.addWidget(self.dec_dec_button)
+        home_layout.addWidget(self.dec_dec_button)
 
         # Increase Decimal
         self.inc_dec_button = QToolButton()
         self.inc_dec_button.setText("+.0")
         self.inc_dec_button.setFixedWidth(36)
-        bar.addWidget(self.inc_dec_button)
+        home_layout.addWidget(self.inc_dec_button)
 
         self.autosum_button = QToolButton()
         self.autosum_button.setText("Σ")
         self.autosum_button.setFixedWidth(32)
-        bar.addWidget(self.autosum_button)
+        home_layout.addWidget(self.autosum_button)
 
         self.sort_asc_button = QToolButton()
         self.sort_asc_button.setText("A→Z")
         self.sort_asc_button.setFixedWidth(40)
-        bar.addWidget(self.sort_asc_button)
+        home_layout.addWidget(self.sort_asc_button)
 
         self.sort_desc_button = QToolButton()
         self.sort_desc_button.setText("Z→A")
         self.sort_desc_button.setFixedWidth(40)
-        bar.addWidget(self.sort_desc_button)
+        home_layout.addWidget(self.sort_desc_button)
 
         self.filter_button = QToolButton()
         self.filter_button.setText("Filter")
         self.filter_button.setCheckable(True)
         self.filter_button.setFixedWidth(50)
-        bar.addWidget(self.filter_button)
+        home_layout.addWidget(self.filter_button)
 
         sizes = [
             "8", "9", "10", "11", "12", "14", "16",
@@ -197,13 +229,13 @@ class MiniExcelUI(QMainWindow):
         self.font_size_box.addItems(sizes)
         self.font_size_box.setCurrentText("11")
 
-        bar.addWidget(self.font_size_box)
+        home_layout.addWidget(self.font_size_box)
 
         self.formula_bar = QLineEdit()
         self.formula_bar.setPlaceholderText("Formula")
-        bar.addWidget(self.formula_bar)
+        home_layout.addWidget(self.formula_bar)
 
-        main_layout.addLayout(bar)
+        main_layout.addLayout(home_layout)
 
         # ===============================
         # TABLE
