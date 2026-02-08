@@ -49,17 +49,20 @@ class MiniExcelUI(QMainWindow):
         self.setCentralWidget(central)
 
         main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(4, 4, 4, 4)
-        main_layout.setSpacing(4)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
         # ===============================
         # TOP BAR
         # ===============================
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.setMovable(False)
         self.tabs.setTabPosition(QTabWidget.North)
+        self.tabs.setFixedHeight(72)
 
+        main_layout.addWidget(self.tabs)
+
+        # Tabs
         self.home_tab = QWidget()
         self.insert_tab = QWidget()
         self.share_tab = QWidget()
@@ -82,11 +85,14 @@ class MiniExcelUI(QMainWindow):
         self.tabs.addTab(self.help_tab, "Help")
         self.tabs.addTab(self.draw_tab, "Draw")
 
+        # ===============================
+        # HOME RIBBON CONTENT
+        # ===============================
+
         home_layout = QHBoxLayout(self.home_tab)
-        home_layout.setContentsMargins(4, 4, 4, 4)
+        home_layout.setContentsMargins(6, 4, 6, 4)
         home_layout.setSpacing(4)
 
-        main_layout.addWidget(self.tabs)
 
         self.cell_label = QLabel("A1")
         self.cell_label.setFixedWidth(40)
@@ -235,7 +241,8 @@ class MiniExcelUI(QMainWindow):
         self.formula_bar.setPlaceholderText("Formula")
         home_layout.addWidget(self.formula_bar)
 
-        main_layout.addLayout(home_layout)
+        home_layout = QHBoxLayout(self.home_tab)
+        main_layout.addWidget(self.tabs)
 
         # ===============================
         # TABLE
