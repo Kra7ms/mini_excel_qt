@@ -139,6 +139,17 @@ class MiniExcelUI(QMainWindow):
         self.merge_button.setFixedWidth(48)
         bar.addWidget(self.merge_button)
 
+        self.number_format_box = QComboBox()
+        self.number_format_box.setMaximumWidth(140)
+        self.number_format_box.addItems([
+            "General",
+            "Number (2 decimals)",
+            "Integer",
+            "Percent",
+            "Currency (₺)",
+        ])
+        bar.addWidget(self.number_format_box)
+
         sizes = [
             "8", "9", "10", "11", "12", "14", "16",
             "18", "20", "22", "24", "26", "28", "36", "48", "72"
@@ -192,6 +203,8 @@ class MiniExcelUI(QMainWindow):
         self.align_right_btn.clicked.connect(lambda: self._set_alignment(Qt.AlignRight))
         self.wrap_button.clicked.connect(self._toggle_wrap)
         self.merge_button.clicked.connect(self._toggle_merge)
+        self.number_format_box.currentTextChanged.connect(self._change_number_format)
+
 
     # ==================================================
     # SETUP
@@ -297,34 +310,38 @@ class MiniExcelUI(QMainWindow):
                 item.column(),
                 item.text(),
                 item.data(Qt.UserRole),
+                item.data(Qt.UserRole + 1),
                 item.background(),
-                item.foreground()
+                item.foreground(),
+                item.data(Qt.UserRole + 2)
             )
         )
+        
 
 
     def _undo(self):
         if not self.undo_stack:
             return
-        row, col, text, formula, border, bg, fg = self.undo_stack.pop()
+        row, col, text, formula, border, bg, fg, number_format = self.undo_stack.pop()
         item = self.table.item(row, col)
         if not item:
             return
         self._undo_block = True
         item.setText(text or "")
-        item.setData(Qt.UserRole + 1, border)
         item.setData(Qt.UserRole, formula)
+        item.setData(Qt.UserRole + 1, border)
         item.setBackground(bg)
         item.setForeground(fg)
+        item.setData(Qt.UserRole + 2, number_format)
         self._undo_block = False
         self.engine.process_item(item)
-        
 
     def _on_item_changed(self, item):
         if self._undo_block:
             return
         self._push_undo_state(item)
         self.engine.process_item(item)
+        self._apply_number_format(item)
 
     # ==================================================
     # FORMAT PAINTER
@@ -423,6 +440,12 @@ class MiniExcelUI(QMainWindow):
 
         span = self.table.span(current.row(), current.column())
         self.merge_button.setText("Unmerge" if span != (1, 1) else "Merge")
+
+        fmt = current.data(Qt.UserRole + 2)
+        self.number_format_box.blockSignals(True)
+        self.number_format_box.setCurrentText(fmt if fmt else "General")
+        self.number_format_box.blockSignals(False)
+
 
     def _apply_formula_from_bar(self):
         item = self.table.currentItem()
@@ -578,6 +601,58 @@ class MiniExcelUI(QMainWindow):
 
         # Merge
         self.table.setSpan(row, col, row_span, col_span)
+
+        def _change_number_format(self, fmt):
+            item = self.table.currentItem()
+            if not item:
+                return
+
+            self._push_undo_state(item)
+
+            # format bilgisini sakla
+            item.setData(Qt.UserRole + 2, fmt)
+
+            # mevcut değeri yeniden formatla
+            self._apply_number_format(item)
+
+        def _apply_number_format(self, item):
+            fmt = item.data(Qt.UserRole + 2)
+            if not fmt:
+                return
+
+            raw = item.data(Qt.UserRole)
+            if raw is None:
+                return
+
+            # raw string ise float'a çevirmeyi dene
+            try:
+                value = float(raw)
+            except Exception:
+                return
+
+            if fmt == "General":
+                text = str(raw)
+
+            elif fmt == "Integer":
+                text = str(int(value))
+
+            elif fmt == "Number (2 decimals)":
+                text = f"{value:.2f}"
+
+            elif fmt == "Percent":
+                text = f"{value * 100:.0f}%"
+
+            elif fmt == "Currency (₺)":
+                text = f"₺{value:,.2f}"
+
+            else:
+                return
+
+            self.table.blockSignals(True)
+            item.setText(text)
+            self.table.blockSignals(False)
+
+
 
     def _apply_table_borders(self):
         css = []
