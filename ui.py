@@ -484,8 +484,13 @@ class MiniExcelUI(QMainWindow):
         self.wrap_button.setChecked(bool(align & Qt.TextWordWrap))
         self.wrap_button.blockSignals(False)
 
-        span = self.table.span(current.row(), current.column())
-        self.merge_button.setText("Unmerge" if span != (1, 1) else "Merge")
+        row = current.row()
+        col = current.column()
+
+        row_span = self.table.rowSpan(row, col)
+        col_span = self.table.columnSpan(row, col)
+
+        is_merged = (row_span > 1 or col_span > 1)
 
         fmt = current.data(Qt.UserRole + 2)
         self.number_format_box.blockSignals(True)
@@ -553,7 +558,7 @@ class MiniExcelUI(QMainWindow):
         # Undo için eski state
         self._push_undo_state(item)
 
-        item.setBackground(color)
+        item.setBackground(QBrush(color))
     
     def _choose_text_color(self):
         item = self.table.currentItem()
@@ -635,8 +640,10 @@ class MiniExcelUI(QMainWindow):
             return
 
         # Eğer zaten merge ise → unmerge
-        current_span = self.table.span(row, col)
-        if current_span != (1, 1):
+        row_span_cur = self.table.rowSpan(row, col)
+        col_span_cur = self.table.columnSpan(row, col)
+
+        if row_span_cur > 1 or col_span_cur > 1:
             self.table.setSpan(row, col, 1, 1)
             return
 
@@ -650,10 +657,21 @@ class MiniExcelUI(QMainWindow):
 
         self._push_undo_state(item)
 
-        # format bilgisini sakla
-        item.setData(Qt.UserRole + 2, fmt)
+        if fmt == "General":
+            item.setData(Qt.UserRole + 2, "General")
 
-        # mevcut değeri yeniden formatla
+        elif fmt == "Integer":
+            item.setData(Qt.UserRole + 2, "Integer:0")
+
+        elif fmt == "Number (2 decimals)":
+            item.setData(Qt.UserRole + 2, "Number:2")
+
+        elif fmt == "Percent":
+            item.setData(Qt.UserRole + 2, "Percent:0")
+
+        elif fmt == "Currency (₺)":
+            item.setData(Qt.UserRole + 2, "Currency:2")
+
         self._apply_number_format(item)
 
     def _apply_number_format(self, item):
@@ -691,6 +709,10 @@ class MiniExcelUI(QMainWindow):
 
             elif kind == "Currency (₺)":
                 text = f"₺{value:,.2f}"
+
+                        
+            elif kind == "Accounting":
+                text = f"₺ {value:,.{dec}f}"
 
             else:
                 return
