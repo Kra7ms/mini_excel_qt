@@ -169,6 +169,27 @@ class MiniExcelUI(QMainWindow):
         self.inc_dec_button.setFixedWidth(36)
         bar.addWidget(self.inc_dec_button)
 
+        self.autosum_button = QToolButton()
+        self.autosum_button.setText("Σ")
+        self.autosum_button.setFixedWidth(32)
+        bar.addWidget(self.autosum_button)
+
+        self.sort_asc_button = QToolButton()
+        self.sort_asc_button.setText("A→Z")
+        self.sort_asc_button.setFixedWidth(40)
+        bar.addWidget(self.sort_asc_button)
+
+        self.sort_desc_button = QToolButton()
+        self.sort_desc_button.setText("Z→A")
+        self.sort_desc_button.setFixedWidth(40)
+        bar.addWidget(self.sort_desc_button)
+
+        self.filter_button = QToolButton()
+        self.filter_button.setText("Filter")
+        self.filter_button.setCheckable(True)
+        self.filter_button.setFixedWidth(50)
+        bar.addWidget(self.filter_button)
+
         sizes = [
             "8", "9", "10", "11", "12", "14", "16",
             "18", "20", "22", "24", "26", "28", "36", "48", "72"
@@ -226,8 +247,10 @@ class MiniExcelUI(QMainWindow):
         self.accounting_button.clicked.connect(self._set_accounting)
         self.inc_dec_button.clicked.connect(self._increase_decimal)
         self.dec_dec_button.clicked.connect(self._decrease_decimal)
-
-
+        self.autosum_button.clicked.connect(self._auto_sum)
+        self.sort_asc_button.clicked.connect(lambda: self._sort_column(Qt.AscendingOrder))
+        self.sort_desc_button.clicked.connect(lambda: self._sort_column(Qt.DescendingOrder))
+        self.filter_button.clicked.connect(self._toggle_filter)
 
     # ==================================================
     # SETUP
@@ -724,6 +747,42 @@ class MiniExcelUI(QMainWindow):
         item.setData(Qt.UserRole + 2, f"{kind}:{dec}")
         self._apply_number_format(item)
 
+    def _auto_sum(self):
+        item = self.table.currentItem()
+        if not item:
+            return
+
+        row = item.row()
+        col = item.column()
+
+        start = row - 1
+        while start >= 0:
+            cell = self.table.item(start, col)
+            if not cell:
+                break
+            try:
+                float(cell.text())
+            except Exception:
+                break
+            start -= 1
+
+        start += 1
+        end = row - 1
+
+        if start > end:
+            return
+
+        start_cell = index_to_cell(start, col)
+        end_cell = index_to_cell(end, col)
+
+        formula = f"=SUM({start_cell}:{end_cell})"
+
+        self._push_undo_state(item)
+        self.table.blockSignals(True)
+        item.setText(formula)
+        self.table.blockSignals(False)
+        self.engine.process_item(item)
+
     def _apply_table_borders(self):
         css = []
 
@@ -741,6 +800,27 @@ class MiniExcelUI(QMainWindow):
                     )
 
         self.table.setStyleSheet("\n".join(css))
+    
+    def _sort_column(self, order):
+        item = self.table.currentItem()
+        if not item:
+            return
+
+        col = item.column()
+        self.table.sortItems(col, order)
+
+    def _toggle_filter(self):
+        item = self.table.currentItem()
+        if not item:
+            return
+
+        col = item.column()
+        enabled = self.filter_button.isChecked()
+
+        for r in range(self.table.rowCount()):
+            cell = self.table.item(r, col)
+            hide = enabled and (not cell or not cell.text())
+            self.table.setRowHidden(r, hide)
 
     # ==================================================
     # INSERT FUNCTION
