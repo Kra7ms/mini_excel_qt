@@ -151,6 +151,24 @@ class MiniExcelUI(QMainWindow):
         ])
         bar.addWidget(self.number_format_box)
 
+        # Accounting button
+        self.accounting_button = QToolButton()
+        self.accounting_button.setText("₺≡")
+        self.accounting_button.setFixedWidth(36)
+        bar.addWidget(self.accounting_button)
+
+        # Decrease Decimal
+        self.dec_dec_button = QToolButton()
+        self.dec_dec_button.setText("-.0")
+        self.dec_dec_button.setFixedWidth(36)
+        bar.addWidget(self.dec_dec_button)
+
+        # Increase Decimal
+        self.inc_dec_button = QToolButton()
+        self.inc_dec_button.setText("+.0")
+        self.inc_dec_button.setFixedWidth(36)
+        bar.addWidget(self.inc_dec_button)
+
         sizes = [
             "8", "9", "10", "11", "12", "14", "16",
             "18", "20", "22", "24", "26", "28", "36", "48", "72"
@@ -205,6 +223,10 @@ class MiniExcelUI(QMainWindow):
         self.wrap_button.clicked.connect(self._toggle_wrap)
         self.merge_button.clicked.connect(self._toggle_merge)
         self.number_format_box.currentTextChanged.connect(self._change_number_format)
+        self.accounting_button.clicked.connect(self._set_accounting)
+        self.inc_dec_button.clicked.connect(self._increase_decimal)
+        self.dec_dec_button.clicked.connect(self._decrease_decimal)
+
 
 
     # ==================================================
@@ -625,20 +647,26 @@ class MiniExcelUI(QMainWindow):
                 value = float(raw)
             except Exception:
                 return
+            
+            if ":" in fmt:
+                kind, dec = fmt.split(":")
+                dec = int(dec)
+            else:
+                kind, dec = fmt, 0
 
-            if fmt == "General":
+            if kind == "General":
                 text = str(raw)
 
-            elif fmt == "Integer":
+            elif kind == "Integer":
                 text = str(int(value))
 
-            elif fmt == "Number (2 decimals)":
+            elif kind == "Number (2 decimals)":
                 text = f"{value:.2f}"
 
-            elif fmt == "Percent":
+            elif kind == "Percent":
                 text = f"{value * 100:.0f}%"
 
-            elif fmt == "Currency (₺)":
+            elif kind == "Currency (₺)":
                 text = f"₺{value:,.2f}"
 
             else:
@@ -648,7 +676,53 @@ class MiniExcelUI(QMainWindow):
             item.setText(text)
             self.table.blockSignals(False)
 
+    def _set_accounting(self):
+        item = self.table.currentItem()
+        if not item:
+            return
 
+        self._push_undo_state(item)
+
+        # varsayılan: 2 ondalık
+        item.setData(Qt.UserRole + 2, "Accounting:2")
+        self._apply_number_format(item)
+    
+    def _get_format_parts(self, item):
+        fmt = item.data(Qt.UserRole + 2)
+        if not fmt:
+            return "General", 0
+
+        if ":" in fmt:
+            kind, dec = fmt.split(":")
+            return kind, int(dec)
+
+        return fmt, 0
+
+    def _increase_decimal(self):
+        item = self.table.currentItem()
+        if not item:
+            return
+
+        self._push_undo_state(item)
+
+        kind, dec = self._get_format_parts(item)
+        dec += 1
+
+        item.setData(Qt.UserRole + 2, f"{kind}:{dec}")
+        self._apply_number_format(item)
+
+    def _decrease_decimal(self):
+        item = self.table.currentItem()
+        if not item:
+            return
+
+        self._push_undo_state(item)
+
+        kind, dec = self._get_format_parts(item)
+        dec = max(0, dec - 1)
+
+        item.setData(Qt.UserRole + 2, f"{kind}:{dec}")
+        self._apply_number_format(item)
 
     def _apply_table_borders(self):
         css = []
