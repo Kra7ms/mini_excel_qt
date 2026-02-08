@@ -72,6 +72,7 @@ class MiniExcelUI(QMainWindow):
 
         self.clipboard_button = QToolButton()
         self.clipboard_button.setText("📋")
+        self.clipboard_button.setPopupMode(QToolButton.InstantPopup)
         self.clipboard_button.setFixedWidth(32)
         bar.addWidget(self.clipboard_button)
 
@@ -588,11 +589,6 @@ class MiniExcelUI(QMainWindow):
         if row_span == 1 and col_span == 1:
             return
 
-        # Undo için (basit)
-        self.undo_stack.append(
-            ("merge", row, col, row_span, col_span)
-        )
-
         # Eğer zaten merge ise → unmerge
         current_span = self.table.span(row, col)
         if current_span != (1, 1):
@@ -602,20 +598,20 @@ class MiniExcelUI(QMainWindow):
         # Merge
         self.table.setSpan(row, col, row_span, col_span)
 
-        def _change_number_format(self, fmt):
-            item = self.table.currentItem()
-            if not item:
-                return
+    def _change_number_format(self, fmt):
+        item = self.table.currentItem()
+        if not item:
+            return
 
-            self._push_undo_state(item)
+        self._push_undo_state(item)
 
-            # format bilgisini sakla
-            item.setData(Qt.UserRole + 2, fmt)
+        # format bilgisini sakla
+        item.setData(Qt.UserRole + 2, fmt)
 
-            # mevcut değeri yeniden formatla
-            self._apply_number_format(item)
+        # mevcut değeri yeniden formatla
+        self._apply_number_format(item)
 
-        def _apply_number_format(self, item):
+    def _apply_number_format(self, item):
             fmt = item.data(Qt.UserRole + 2)
             if not fmt:
                 return
