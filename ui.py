@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
     QFontComboBox,
     QComboBox,
     QColorDialog,
-    QTabWidget
+    QTabWidget,
+    QDialog
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication, QColor, QBrush
@@ -53,7 +54,7 @@ class MiniExcelUI(QMainWindow):
         main_layout.setSpacing(0)
 
         # ===============================
-        # TOP BAR
+        # TABS
         # ===============================
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -86,18 +87,20 @@ class MiniExcelUI(QMainWindow):
         self.tabs.addTab(self.draw_tab, "Draw")
 
         # ===============================
-        # HOME RIBBON CONTENT
+        # HOME TAB
         # ===============================
-
         home_layout = QHBoxLayout(self.home_tab)
         home_layout.setContentsMargins(6, 4, 6, 4)
-        home_layout.setSpacing(4)
-
+        home_layout.setSpacing(6)
 
         self.cell_label = QLabel("A1")
         self.cell_label.setFixedWidth(40)
         self.cell_label.setAlignment(Qt.AlignCenter)
         home_layout.addWidget(self.cell_label)
+
+        self.formula_bar = QLineEdit()
+        self.formula_bar.setPlaceholderText("Formula")
+        home_layout.addWidget(self.formula_bar)
 
         self.fx_button = QToolButton()
         self.fx_button.setText("fx")
@@ -237,12 +240,20 @@ class MiniExcelUI(QMainWindow):
 
         home_layout.addWidget(self.font_size_box)
 
-        self.formula_bar = QLineEdit()
-        self.formula_bar.setPlaceholderText("Formula")
-        home_layout.addWidget(self.formula_bar)
+        # ===============================
+        # INSERT TAB
+        # ===============================
+        insert_layout = QHBoxLayout(self.insert_tab)
+        insert_layout.setContentsMargins(6, 4, 6, 4)
+        insert_layout.setSpacing(8)
 
-        home_layout = QHBoxLayout(self.home_tab)
-        main_layout.addWidget(self.tabs)
+        self.insert_pivot_btn = QPushButton("Pivot Table")
+        insert_layout.addWidget(self.insert_pivot_btn)
+        self.insert_pivot_btn.clicked.connect(self._insert_pivot_table)
+
+        self.insert_chart_btn = QPushButton("Chart")
+        self.insert_chart_btn.setEnabled(False)
+        insert_layout.addWidget(self.insert_chart_btn)
 
         # ===============================
         # TABLE
@@ -523,14 +534,6 @@ class MiniExcelUI(QMainWindow):
         self.wrap_button.setChecked(bool(align & Qt.TextWordWrap))
         self.wrap_button.blockSignals(False)
 
-        row = current.row()
-        col = current.column()
-
-        row_span = self.table.rowSpan(row, col)
-        col_span = self.table.columnSpan(row, col)
-
-        is_merged = (row_span > 1 or col_span > 1)
-
         fmt = current.data(Qt.UserRole + 2)
         self.number_format_box.blockSignals(True)
         self.number_format_box.setCurrentText(fmt if fmt else "General")
@@ -714,51 +717,51 @@ class MiniExcelUI(QMainWindow):
         self._apply_number_format(item)
 
     def _apply_number_format(self, item):
-            fmt = item.data(Qt.UserRole + 2)
-            if not fmt:
-                return
+        fmt = item.data(Qt.UserRole + 2)
+        if not fmt:
+            return
 
-            raw = item.data(Qt.UserRole)
-            if raw is None:
-                return
+        raw = item.data(Qt.UserRole)
+        if raw is None:
+            return
 
-            # raw string ise float'a çevirmeyi dene
-            try:
-                value = float(raw)
-            except Exception:
-                return
-            
-            if ":" in fmt:
-                kind, dec = fmt.split(":")
-                dec = int(dec)
-            else:
-                kind, dec = fmt, 0
+        # raw string ise float'a çevirmeyi dene
+        try:
+            value = float(raw)
+        except Exception:
+            return
+        
+        if ":" in fmt:
+            kind, dec = fmt.split(":")
+            dec = int(dec)
+        else:
+            kind, dec = fmt, 0
 
-            if kind == "General":
-                text = str(raw)
+        if kind == "General":
+            text = str(raw)
 
-            elif kind == "Integer":
-                text = str(int(value))
+        elif kind == "Integer":
+            text = str(int(value))
 
-            elif kind == "Number (2 decimals)":
-                text = f"{value:.2f}"
+        elif kind == "Number (2 decimals)":
+            text = f"{value:.2f}"
 
-            elif kind == "Percent":
-                text = f"{value * 100:.0f}%"
+        elif kind == "Percent":
+            text = f"{value * 100:.0f}%"
 
-            elif kind == "Currency (₺)":
-                text = f"₺{value:,.2f}"
+        elif kind == "Currency (₺)":
+            text = f"₺{value:,.2f}"
 
-                        
-            elif kind == "Accounting":
-                text = f"₺ {value:,.{dec}f}"
+                    
+        elif kind == "Accounting":
+            text = f"₺ {value:,.{dec}f}"
 
-            else:
-                return
+        else:
+            return
 
-            self.table.blockSignals(True)
-            item.setText(text)
-            self.table.blockSignals(False)
+        self.table.blockSignals(True)
+        item.setText(text)
+        self.table.blockSignals(False)
 
     def _set_accounting(self):
         item = self.table.currentItem()
@@ -883,6 +886,32 @@ class MiniExcelUI(QMainWindow):
             hide = enabled and (not cell or not cell.text())
             self.table.setRowHidden(r, hide)
 
+    def _insert_pivot_table(self):
+        ranges = self.table.selectedRanges()
+        if not ranges:
+            return
+
+        r = ranges[0]
+
+        if not headers:
+            return
+
+        headers = []
+        for c in range(r.leftColumn(), r.rightColumn() + 1):
+            item = self.table.item(r.topRow(), c)
+            headers.append(item.text() if item else "")
+
+        dlg = PivotDialog(headers)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        # şimdilik sadece test
+        print(
+            dlg.row_box.currentText(),
+            dlg.value_box.currentText(),
+            dlg.func_box.currentText()
+        )
+
     # ==================================================
     # INSERT FUNCTION
     # ==================================================
@@ -893,3 +922,40 @@ class MiniExcelUI(QMainWindow):
         self.formula_bar.setText(text[:cursor] + insert + text[cursor:])
         self.formula_bar.setCursorPosition(cursor + len(fn) + 1)
         self.formula_bar.setFocus()
+
+
+class PivotDialog(QDialog):
+    def __init__(self, headers):
+        super().__init__()
+        self.setWindowTitle("Create Pivot Table")
+
+        layout = QVBoxLayout(self)
+
+        self.row_box = QComboBox()
+        self.value_box = QComboBox()
+        self.func_box = QComboBox()
+
+        self.row_box.addItems(headers)
+        self.value_box.addItems(headers)
+        self.func_box.addItems(["SUM", "COUNT", "AVERAGE"])
+
+        layout.addWidget(QLabel("Row field"))
+        layout.addWidget(self.row_box)
+
+        layout.addWidget(QLabel("Value field"))
+        layout.addWidget(self.value_box)
+
+        layout.addWidget(QLabel("Function"))
+        layout.addWidget(self.func_box)
+
+        btns = QHBoxLayout()
+
+        ok = QPushButton("Create")
+        cancel = QPushButton("Cancel")
+
+        ok.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject)
+
+        btns.addWidget(ok)
+        btns.addWidget(cancel)
+        layout.addWidget(btns)
